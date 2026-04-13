@@ -1,0 +1,274 @@
+import { create } from 'zustand';
+import { supabase } from './supabase';
+import {
+  Profile, Activity, UserBadge, WeightLog, Plan,
+  TimedScore, Duel, Crew, DailyChallengeCompletion,
+  WeeklyChallengeCompletion, ActivityType,
+} from '../types';
+import {
+  ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
+  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS,
+} from '../constants/game';
+
+// ─────────────────────────────────────────────
+// State shape
+// ─────────────────────────────────────────────
+
+interface FitRankXState {
+  // Data
+  profile: Profile | null;
+  todayActivities: Activity[];
+  badges: UserBadge[];
+  weightLogs: WeightLog[];
+  plans: Plan[];
+  timedScores: TimedScore[];
+  duels: Duel[];
+  crew: Crew | null;
+  todayChallenge: DailyChallengeCompletion | null;
+  weeklyChallenge: WeeklyChallengeCompletion | null;
+
+  // UI state
+  isLoading: boolean;
+  error: string | null;
+
+  // Actions
+  loadProfile: () => Promise<void>;
+  logActivity: (type: ActivityType) => Promise<{ ptsEarned: number; comboBonus: boolean } | null>;
+  completeDailyChallenge: (challengeText: string) => Promise<void>;
+  logWeight: (weightLbs: number) => Promise<void>;
+  updateProfile: (updates: Partial<Profile>) => Promise<void>;
+  loadTodayActivities: () => Promise<void>;
+  loadWeightLogs: () => Promise<void>;
+  loadBadges: () => Promise<void>;
+  reset: () => void;
+}
+
+// ─────────────────────────────────────────────
+// Store
+// ─────────────────────────────────────────────
+
+export const useFitRankX = create<FitRankXState>((set, get) => ({
+  profile: null,
+  todayActivities: [],
+  badges: [],
+  weightLogs: [],
+  plans: [],
+  timedScores: [],
+  duels: [],
+  crew: null,
+  todayChallenge: null,
+  weeklyChallenge: null,
+  isLoading: false,
+  error: null,
+
+  loadProfile: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+    set({ profile: data });
+  },
+
+  loadTodayActivities: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('logged_date', today)
+      .order('logged_at', { ascending: false });
+
+    set({ todayActivities: data ?? [] });
+  },
+
+  logActivity: async (type: ActivityType) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const state = get();
+    const profile = state.profile;
+    if (!profile) return null;
+
+    const actDef = ACTIVITY_MAP[type];
+    const multiplier = getStreakMultiplier(profile.streak);
+    const basePts = actDef.pts;
+
+    // Check for cardio combo bonus
+    const todayCardio = state.todayActivities.filter(a => ACTIVITY_MAP[a.type]?.isCardio);
+    const comboBonus =
+      actDef.isCardio &&
+      todayCardio.length >= COMBO_CARDIO_THRESHOLD - 1 &&
+      !state.todayActivities.some(a => a.combo_bonus);
+
+    const ptsEarned = Math.round(basePts * multiplier) + (comboBonus ? COMBO_BONUS_PTS : 0);
+
+    // Insert activity
+    const { data: activity, error: actError } = await supabase
+      .from('activities')
+      .insert({
+        user_id: user.id,
+        type,
+        pts_earned: ptsEarned,
+        multiplier,
+        combo_bonus: comboBonus,
+      })
+      .select()
+      .single();
+
+    if (actError) {
+      set({ error: actError.message });
+      return null;
+    }
+
+    // Update profile pts and streak
+    const today = new Date().toISOString().split('T')[0];
+    const lastActive = profile.last_active_date;
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+    const newStreak =
+      lastActive === today ? profile.streak :
+      lastActive === yesterday ? profile.streak + 1 : 1;
+
+    const newPts = profile.pts + ptsEarned;
+    const newRank = getRankForPts(newPts).rank;
+
+    await supabase
+      .from('profiles')
+      .update({
+        pts: newPts,
+        streak: newStreak,
+        last_active_date: today,
+        rank: newRank,
+      })
+      .eq('id', user.id);
+
+    // Refresh state
+    await Promise.all([
+      get().loadProfile(),
+      get().loadTodayActivities(),
+    ]);
+
+    return { ptsEarned, comboBonus };
+  },
+
+  completeDailyChallenge: async (challengeText: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+      .from('daily_challenge_completions')
+      .insert({
+        user_id: user.id,
+        challenge_text: challengeText,
+        pts_earned: DAILY_CHALLENGE_PTS,
+        challenge_date: today,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+
+    // Add pts to profile
+    const profile = get().profile;
+    if (profile) {
+      await supabase
+        .from('profiles')
+        .update({ pts: profile.pts + DAILY_CHALLENGE_PTS })
+        .eq('id', user.id);
+    }
+
+    set({ todayChallenge: data });
+    await get().loadProfile();
+  },
+
+  logWeight: async (weightLbs: number) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('weight_logs')
+      .insert({ user_id: user.id, weight_lbs: weightLbs });
+
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+
+    await get().loadWeightLogs();
+  },
+
+  loadWeightLogs: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('weight_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('logged_date', { ascending: false })
+      .limit(20);
+
+    set({ weightLogs: data ?? [] });
+  },
+
+  loadBadges: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data } = await supabase
+      .from('user_badges')
+      .select('*, badge:badges(*)')
+      .eq('user_id', user.id)
+      .order('earned_at', { ascending: false });
+
+    set({ badges: data ?? [] });
+  },
+
+  updateProfile: async (updates: Partial<Profile>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    if (error) {
+      set({ error: error.message });
+      return;
+    }
+
+    await get().loadProfile();
+  },
+
+  reset: () => set({
+    profile: null,
+    todayActivities: [],
+    badges: [],
+    weightLogs: [],
+    plans: [],
+    timedScores: [],
+    duels: [],
+    crew: null,
+    todayChallenge: null,
+    weeklyChallenge: null,
+    error: null,
+  }),
+}));
