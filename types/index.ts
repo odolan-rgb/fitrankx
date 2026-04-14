@@ -169,6 +169,17 @@ export interface CrewBattle {
   challenged_crew?: Crew;
 }
 
+export type FriendRequestStatus = 'pending' | 'accepted' | 'declined';
+
+export interface FriendRequest {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  status: FriendRequestStatus;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DailyChallengeCompletion {
   id: string;
   user_id: string;
