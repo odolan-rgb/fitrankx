@@ -1,7 +1,39 @@
+import { useEffect, useRef, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '../../lib/supabase';
 
 export default function TabsLayout() {
+  const [pendingRequests, setPendingRequests] = useState(0);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  useEffect(() => {
+    let userId: string | null = null;
+
+    const fetchPending = async () => {
+      if (!userId) return;
+      const { count } = await supabase
+        .from('friend_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('to_user_id', userId)
+        .eq('status', 'pending');
+      setPendingRequests(count ?? 0);
+    };
+
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      userId = user.id;
+      await fetchPending();
+    };
+
+    init();
+
+    return () => {
+      channelRef.current?.unsubscribe();
+    };
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -34,6 +66,7 @@ export default function TabsLayout() {
         name="leaderboard"
         options={{
           title: 'Ranks',
+          tabBarBadge: pendingRequests > 0 ? pendingRequests : undefined,
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="trophy" color={color} size={size} />
           ),
