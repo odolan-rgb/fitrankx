@@ -17,6 +17,12 @@ export default function HomeScreen() {
   const rankProgress = profile ? getRankProgress(profile.pts) : 0;
   const multiplier = profile ? getStreakMultiplier(profile.streak) : 1;
 
+  // Warn if it's 7pm+ and the user hasn't logged anything today
+  const streakAtRisk =
+    profile !== null &&
+    todayActivities.length === 0 &&
+    new Date().getHours() >= 19;
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -41,6 +47,15 @@ export default function HomeScreen() {
               <View style={[styles.progressFill, { width: `${rankProgress}%` as any }]} />
             </View>
             <Text style={styles.rankSub}>{rankProgress}% to next rank</Text>
+          </View>
+        )}
+
+        {/* Streak at risk warning */}
+        {streakAtRisk && (
+          <View style={styles.streakWarning}>
+            <Text style={styles.streakWarningText}>
+              ⚠️ Streak at risk! Log an activity before midnight to keep your streak.
+            </Text>
           </View>
         )}
 
@@ -109,6 +124,15 @@ const styles = StyleSheet.create({
   progressBar: { width: '100%', height: 8, backgroundColor: '#2d1a4a', borderRadius: 4, overflow: 'hidden' },
   progressFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 4 },
   rankSub: { color: '#666', fontSize: 12, marginTop: 8 },
+  streakWarning: {
+    backgroundColor: '#1a0a00',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  streakWarningText: { color: '#ef4444', fontWeight: '700', textAlign: 'center', fontSize: 13 },
   multiplierBadge: {
     backgroundColor: '#1a1000',
     borderRadius: 10,
