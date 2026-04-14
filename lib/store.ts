@@ -7,8 +7,9 @@ import {
 } from '../types';
 import {
   ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
-  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS, BadgeDef,
 } from '../constants/game';
+import { checkAndAwardBadges } from './badges';
 
 // ─────────────────────────────────────────────
 // State shape
@@ -30,10 +31,12 @@ interface FitRankXState {
   // UI state
   isLoading: boolean;
   error: string | null;
+  pendingBadges: BadgeDef[];
 
   // Actions
   loadProfile: () => Promise<void>;
   logActivity: (type: ActivityType) => Promise<{ ptsEarned: number; comboBonus: boolean } | null>;
+  clearPendingBadges: () => void;
   completeDailyChallenge: (challengeText: string) => Promise<void>;
   logWeight: (weightLbs: number) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
@@ -60,6 +63,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
   weeklyChallenge: null,
   isLoading: false,
   error: null,
+  pendingBadges: [],
 
   loadProfile: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -160,6 +164,20 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       get().loadTodayActivities(),
     ]);
 
+    // Check and award any newly unlocked badges
+    const updatedProfile = get().profile;
+    const updatedActivities = get().todayActivities;
+    if (updatedProfile) {
+      const newBadges = await checkAndAwardBadges(user.id, {
+        profile: updatedProfile,
+        todayActivities: updatedActivities,
+      });
+      if (newBadges.length > 0) {
+        await get().loadBadges();
+        set({ pendingBadges: newBadges });
+      }
+    }
+
     return { ptsEarned, comboBonus };
   },
 
@@ -258,6 +276,8 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     await get().loadProfile();
   },
 
+  clearPendingBadges: () => set({ pendingBadges: [] }),
+
   reset: () => set({
     profile: null,
     todayActivities: [],
@@ -269,6 +289,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     crew: null,
     todayChallenge: null,
     weeklyChallenge: null,
+    pendingBadges: [],
     error: null,
   }),
 }));
