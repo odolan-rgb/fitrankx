@@ -35,6 +35,7 @@ interface FitRankXState {
   loadProfile: () => Promise<void>;
   logActivity: (type: ActivityType) => Promise<{ ptsEarned: number; comboBonus: boolean } | null>;
   completeDailyChallenge: (challengeText: string) => Promise<void>;
+  loadTodayChallenge: () => Promise<void>;
   logWeight: (weightLbs: number) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   loadTodayActivities: () => Promise<void>;
@@ -196,6 +197,21 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     set({ todayChallenge: data });
     await get().loadProfile();
+  },
+
+  loadTodayChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('daily_challenge_completions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('challenge_date', today)
+      .maybeSingle();
+
+    set({ todayChallenge: data ?? null });
   },
 
   logWeight: async (weightLbs: number) => {
