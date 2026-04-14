@@ -10,21 +10,52 @@ export default function SignupScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [verificationSent, setVerificationSent] = useState(false);
   const { theme } = useTheme();
   const styles = makeStyles(theme);
 
   const handleSignup = async () => {
-    setLoading(true);
     setError('');
-    const { error } = await supabase.auth.signUp({
+    if (username.trim().length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { username } },
+      options: { data: { username: username.trim() } },
     });
-    if (error) setError(error.message);
-    else router.replace('/(auth)/onboarding');
+    if (error) {
+      setError(error.message);
+    } else if (data.session) {
+      router.replace('/(auth)/onboarding');
+    } else {
+      setVerificationSent(true);
+    }
     setLoading(false);
   };
+
+  if (verificationSent) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.logo}>FitRankX</Text>
+        <Text style={styles.title}>Check your email</Text>
+        <Text style={styles.verifyText}>
+          We sent a verification link to{'\n'}
+          <Text style={styles.verifyEmail}>{email}</Text>
+          {'\n\n'}Click the link to verify your account, then come back to log in.
+        </Text>
+        <TouchableOpacity style={styles.button} onPress={() => router.replace('/(auth)/login')}>
+          <Text style={styles.buttonText}>Go to Login</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -35,11 +66,12 @@ export default function SignupScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Username"
+        placeholder="Username (min 3 characters)"
         placeholderTextColor="#666"
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
+        maxLength={30}
       />
       <TextInput
         style={styles.input}
@@ -52,7 +84,7 @@ export default function SignupScreen() {
       />
       <TextInput
         style={styles.input}
-        placeholder="Password"
+        placeholder="Password (min 8 characters)"
         placeholderTextColor="#666"
         value={password}
         onChangeText={setPassword}
@@ -91,6 +123,23 @@ function makeStyles(theme: ThemeColors) {
       color: '#888',
       marginBottom: 40,
     },
+    title: {
+      fontSize: 24,
+      fontWeight: '800',
+      color: theme.text,
+      marginBottom: 16,
+    },
+    verifyText: {
+      fontSize: 15,
+      color: '#888',
+      textAlign: 'center',
+      lineHeight: 24,
+      marginBottom: 40,
+    },
+    verifyEmail: {
+      color: theme.primary,
+      fontWeight: '700',
+    },
     input: {
       width: '100%',
       backgroundColor: theme.card,
@@ -124,6 +173,7 @@ function makeStyles(theme: ThemeColors) {
       color: '#f87171',
       marginBottom: 12,
       fontSize: 14,
+      textAlign: 'center',
     },
   });
 }
