@@ -114,6 +114,10 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     const ptsEarned = Math.round(basePts * multiplier) + (comboBonus ? COMBO_BONUS_PTS : 0);
 
+    // Derive local date for correct timezone-aware streak calculation
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     // Insert activity
     const { data: activity, error: actError } = await supabase
       .from('activities')
@@ -123,6 +127,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
         pts_earned: ptsEarned,
         multiplier,
         combo_bonus: comboBonus,
+        logged_date: today,
       })
       .select()
       .single();
@@ -132,26 +137,19 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       return null;
     }
 
-    // Update profile pts and streak
-    const today = new Date().toISOString().split('T')[0];
-    const lastActive = profile.last_active_date;
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // Update streak server-side — tamper-proof Postgres function
+    await supabase.rpc('update_streak', {
+      p_user_id: user.id,
+      p_activity_date: today,
+    });
 
-    const newStreak =
-      lastActive === today ? profile.streak :
-      lastActive === yesterday ? profile.streak + 1 : 1;
-
+    // Update pts and rank
     const newPts = profile.pts + ptsEarned;
     const newRank = getRankForPts(newPts).rank;
 
     await supabase
       .from('profiles')
-      .update({
-        pts: newPts,
-        streak: newStreak,
-        last_active_date: today,
-        rank: newRank,
-      })
+      .update({ pts: newPts, rank: newRank })
       .eq('id', user.id);
 
     // Refresh state
