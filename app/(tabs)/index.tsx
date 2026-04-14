@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFitRankX } from '../../lib/store';
+import { useTheme, ThemeColors } from '../../lib/theme';
 import { ACTIVITIES, getRankForPts, getRankProgress, getStreakMultiplier } from '../../constants/game';
 
 // TODO: Implement full home screen — see GitHub issue #home-screen
@@ -13,9 +14,11 @@ import { ACTIVITIES, getRankForPts, getRankProgress, getStreakMultiplier } from 
 
 export default function HomeScreen() {
   const { profile, todayActivities, logActivity } = useFitRankX();
+  const { theme } = useTheme();
   const rank = profile ? getRankForPts(profile.pts) : null;
   const rankProgress = profile ? getRankProgress(profile.pts) : 0;
   const multiplier = profile ? getStreakMultiplier(profile.streak) : 1;
+  const styles = makeStyles(theme);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -85,55 +88,57 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#06001a' },
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  greeting: { color: '#ccc', fontSize: 14 },
-  pts: { color: '#fff', fontSize: 28, fontWeight: '900' },
-  streakBadge: { alignItems: 'center', backgroundColor: '#1a0030', borderRadius: 12, padding: 12 },
-  streakFire: { fontSize: 20 },
-  streakCount: { color: '#f97316', fontWeight: '800', fontSize: 18 },
-  rankCard: {
-    backgroundColor: '#110020',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2d1a4a',
-  },
-  rankEmoji: { fontSize: 32, marginBottom: 4 },
-  rankLabel: { color: '#a855f7', fontSize: 22, fontWeight: '900', marginBottom: 12 },
-  progressBar: { width: '100%', height: 8, backgroundColor: '#2d1a4a', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 4 },
-  rankSub: { color: '#666', fontSize: 12, marginTop: 8 },
-  multiplierBadge: {
-    backgroundColor: '#1a1000',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#f97316',
-  },
-  multiplierText: { color: '#f97316', fontWeight: '700', textAlign: 'center' },
-  sectionTitle: { color: '#888', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 12, marginTop: 8 },
-  activityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  activityBtn: {
-    backgroundColor: '#110020',
-    borderRadius: 12,
-    padding: 14,
-    width: '30%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2d1a4a',
-  },
-  activityIcon: { fontSize: 24, marginBottom: 4 },
-  activityLabel: { color: '#ccc', fontSize: 12, marginBottom: 2 },
-  activityPts: { color: '#a855f7', fontWeight: '700', fontSize: 12 },
-  logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a0030' },
-  logIcon: { fontSize: 18, marginRight: 10 },
-  logLabel: { color: '#ccc', flex: 1, textTransform: 'capitalize' },
-  logPts: { color: '#a855f7', fontWeight: '700' },
-});
+function makeStyles(theme: ThemeColors) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.bg },
+    container: { flex: 1 },
+    content: { padding: 20, paddingBottom: 40 },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    greeting: { color: '#ccc', fontSize: 14 },
+    pts: { color: theme.text, fontSize: 28, fontWeight: '900' },
+    streakBadge: { alignItems: 'center', backgroundColor: theme.card, borderRadius: 12, padding: 12 },
+    streakFire: { fontSize: 20 },
+    streakCount: { color: '#f97316', fontWeight: '800', fontSize: 18 },
+    rankCard: {
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 12,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    rankEmoji: { fontSize: 32, marginBottom: 4 },
+    rankLabel: { color: theme.primary, fontSize: 22, fontWeight: '900', marginBottom: 12 },
+    progressBar: { width: '100%', height: 8, backgroundColor: theme.border, borderRadius: 4, overflow: 'hidden' },
+    progressFill: { height: '100%', backgroundColor: theme.primary, borderRadius: 4 },
+    rankSub: { color: '#666', fontSize: 12, marginTop: 8 },
+    multiplierBadge: {
+      backgroundColor: theme.card,
+      borderRadius: 10,
+      padding: 10,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.secondary,
+    },
+    multiplierText: { color: theme.secondary, fontWeight: '700', textAlign: 'center' },
+    sectionTitle: { color: '#888', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 12, marginTop: 8 },
+    activityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+    activityBtn: {
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      padding: 14,
+      width: '30%',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    activityIcon: { fontSize: 24, marginBottom: 4 },
+    activityLabel: { color: '#ccc', fontSize: 12, marginBottom: 2 },
+    activityPts: { color: theme.primary, fontWeight: '700', fontSize: 12 },
+    logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.card },
+    logIcon: { fontSize: 18, marginRight: 10 },
+    logLabel: { color: '#ccc', flex: 1, textTransform: 'capitalize' },
+    logPts: { color: theme.primary, fontWeight: '700' },
+  });
+}
