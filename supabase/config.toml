@@ -1,0 +1,43 @@
+# Supabase local development configuration
+# Reference: https://supabase.com/docs/guides/cli/config
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[auth]
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = []
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+# ─── Edge Function cron schedules ────────────────────────────────────────────
+#
+# Cron expressions are standard 5-field UTC schedules.
+# CRON_SECRET env var is used to authenticate scheduled invocations.
+# Set it via: supabase secrets set CRON_SECRET=<random-secret>
+
+[functions.reset-streaks]
+# Midnight UTC — resets streaks for users who didn't log yesterday
+schedule = "0 0 * * *"
+
+[functions.send-streak-reminders]
+# 7 pm UTC — nudge users who haven't logged anything today
+schedule = "0 19 * * *"
+
+[functions.update-crew-battles]
+# 1 am UTC — resolve any crew battles whose end time has passed
+schedule = "0 1 * * *"
