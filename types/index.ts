@@ -39,6 +39,7 @@ export interface Profile {
   weight_lbs: number | null;
   fitness_goal: FitnessGoal | null;
   activity_level: ActivityLevel | null;
+  user_timezone: string;
   created_at: string;
   updated_at: string;
 }
