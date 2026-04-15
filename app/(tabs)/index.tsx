@@ -1,25 +1,61 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { useEffect, useRef, useMemo } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, Animated,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFitRankX } from '../../lib/store';
+import { useTheme, AppTheme } from '../../lib/theme';
 import { ACTIVITIES, getRankForPts, getRankProgress, getStreakMultiplier } from '../../constants/game';
 
-// TODO: Implement full home screen — see GitHub issue #home-screen
-// Features needed:
-// - Activity logging buttons with point values
-// - Daily challenge card
-// - Streak display with multiplier
-// - Weekly challenge progress
-// - Points animation on log
+// Streak orange is a functional constant, not part of the palette
+const STREAK_COLOR = '#f97316';
 
 export default function HomeScreen() {
-  const { profile, todayActivities, logActivity } = useFitRankX();
+  const {
+    profile, todayActivities,
+    weeklyChallenge, loadWeeklyChallenge,
+    claimWeeklyReward, logActivity,
+  } = useFitRankX();
+
+  const theme = useTheme();
+  const styles = useMemo(() => makeStyles(theme), [theme]);
+
   const rank = profile ? getRankForPts(profile.pts) : null;
   const rankProgress = profile ? getRankProgress(profile.pts) : 0;
   const multiplier = profile ? getStreakMultiplier(profile.streak) : 1;
 
+  // Load weekly challenge on mount
+  useEffect(() => {
+    loadWeeklyChallenge();
+  }, []);
+
+  // Glowing pulse for the claim button
+  const glowPulse = useRef(new Animated.Value(0.75)).current;
+  const canClaim =
+    !!weeklyChallenge &&
+    weeklyChallenge.progress >= weeklyChallenge.target &&
+    !weeklyChallenge.claimed;
+
+  useEffect(() => {
+    if (canClaim) {
+      const anim = Animated.loop(
+        Animated.sequence([
+          Animated.timing(glowPulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(glowPulse, { toValue: 0.75, duration: 700, useNativeDriver: true }),
+        ])
+      );
+      anim.start();
+      return () => anim.stop();
+    } else {
+      glowPulse.setValue(0.75);
+    }
+  }, [canClaim]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
         {/* Header */}
         <View style={styles.header}>
           <View>
@@ -51,6 +87,50 @@ export default function HomeScreen() {
           </View>
         )}
 
+        {/* Weekly challenge card */}
+        {weeklyChallenge && (
+          <View style={styles.weeklyCard}>
+            <View style={styles.weeklyHeader}>
+              <Text style={styles.weeklyTitle}>Weekly Challenge</Text>
+              <Text style={styles.weeklyPts}>+{weeklyChallenge.pts_earned} pts</Text>
+            </View>
+
+            <Text style={styles.weeklyDesc}>{weeklyChallenge.challenge_desc}</Text>
+
+            {/* Progress bar */}
+            <View style={styles.weeklyProgressTrack}>
+              <View
+                style={[
+                  styles.weeklyProgressFill,
+                  {
+                    width: `${Math.min(100, Math.round((weeklyChallenge.progress / weeklyChallenge.target) * 100))}%` as any,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.weeklyProgressLabel}>
+              {weeklyChallenge.progress} / {weeklyChallenge.target}
+            </Text>
+
+            {/* Claim / claimed state */}
+            {weeklyChallenge.claimed ? (
+              <View style={styles.claimedBadge}>
+                <Text style={styles.claimedText}>✅ Claimed</Text>
+              </View>
+            ) : canClaim ? (
+              <Animated.View style={{ opacity: glowPulse }}>
+                <TouchableOpacity
+                  style={styles.claimBtn}
+                  onPress={claimWeeklyReward}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.claimBtnText}>🏆 Claim Reward</Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ) : null}
+          </View>
+        )}
+
         {/* Activity buttons */}
         <Text style={styles.sectionTitle}>Log Activity</Text>
         <View style={styles.activityGrid}>
@@ -67,7 +147,7 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        {/* Today's logged */}
+        {/* Today's log */}
         {todayActivities.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Today</Text>
@@ -85,55 +165,123 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#06001a' },
-  container: { flex: 1 },
-  content: { padding: 20, paddingBottom: 40 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  greeting: { color: '#ccc', fontSize: 14 },
-  pts: { color: '#fff', fontSize: 28, fontWeight: '900' },
-  streakBadge: { alignItems: 'center', backgroundColor: '#1a0030', borderRadius: 12, padding: 12 },
-  streakFire: { fontSize: 20 },
-  streakCount: { color: '#f97316', fontWeight: '800', fontSize: 18 },
-  rankCard: {
-    backgroundColor: '#110020',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2d1a4a',
-  },
-  rankEmoji: { fontSize: 32, marginBottom: 4 },
-  rankLabel: { color: '#a855f7', fontSize: 22, fontWeight: '900', marginBottom: 12 },
-  progressBar: { width: '100%', height: 8, backgroundColor: '#2d1a4a', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 4 },
-  rankSub: { color: '#666', fontSize: 12, marginTop: 8 },
-  multiplierBadge: {
-    backgroundColor: '#1a1000',
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#f97316',
-  },
-  multiplierText: { color: '#f97316', fontWeight: '700', textAlign: 'center' },
-  sectionTitle: { color: '#888', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', marginBottom: 12, marginTop: 8 },
-  activityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  activityBtn: {
-    backgroundColor: '#110020',
-    borderRadius: 12,
-    padding: 14,
-    width: '30%',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2d1a4a',
-  },
-  activityIcon: { fontSize: 24, marginBottom: 4 },
-  activityLabel: { color: '#ccc', fontSize: 12, marginBottom: 2 },
-  activityPts: { color: '#a855f7', fontWeight: '700', fontSize: 12 },
-  logRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1a0030' },
-  logIcon: { fontSize: 18, marginRight: 10 },
-  logLabel: { color: '#ccc', flex: 1, textTransform: 'capitalize' },
-  logPts: { color: '#a855f7', fontWeight: '700' },
-});
+function makeStyles(theme: AppTheme) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: theme.bg },
+    container: { flex: 1 },
+    content: { padding: 20, paddingBottom: 40 },
+
+    // Header
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    greeting: { color: theme.textSecondary, fontSize: 14 },
+    pts: { color: theme.textPrimary, fontSize: 28, fontWeight: '900' },
+    streakBadge: { alignItems: 'center', backgroundColor: theme.cardBg, borderRadius: 12, padding: 12 },
+    streakFire: { fontSize: 20 },
+    streakCount: { color: STREAK_COLOR, fontWeight: '800', fontSize: 18 },
+
+    // Rank card
+    rankCard: {
+      backgroundColor: theme.cardBg,
+      borderRadius: 16,
+      padding: 20,
+      marginBottom: 12,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    rankEmoji: { fontSize: 32, marginBottom: 4 },
+    rankLabel: { color: theme.primary, fontSize: 22, fontWeight: '900', marginBottom: 12 },
+    progressBar: { width: '100%', height: 8, backgroundColor: theme.border, borderRadius: 4, overflow: 'hidden' },
+    progressFill: { height: '100%', backgroundColor: theme.primary, borderRadius: 4 },
+    rankSub: { color: theme.textMuted, fontSize: 12, marginTop: 8 },
+
+    // Multiplier
+    multiplierBadge: {
+      backgroundColor: theme.cardBg,
+      borderRadius: 10,
+      padding: 10,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: STREAK_COLOR,
+    },
+    multiplierText: { color: STREAK_COLOR, fontWeight: '700', textAlign: 'center' },
+
+    // Weekly challenge card
+    weeklyCard: {
+      backgroundColor: theme.cardBg,
+      borderRadius: 16,
+      padding: 18,
+      marginBottom: 20,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    weeklyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+    weeklyTitle: { color: theme.textMuted, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
+    weeklyPts: { color: theme.primary, fontSize: 13, fontWeight: '800' },
+    weeklyDesc: { color: theme.textPrimary, fontSize: 15, fontWeight: '700', marginBottom: 14, lineHeight: 21 },
+    weeklyProgressTrack: {
+      height: 8,
+      backgroundColor: theme.border,
+      borderRadius: 4,
+      overflow: 'hidden',
+      marginBottom: 6,
+    },
+    weeklyProgressFill: {
+      height: '100%',
+      backgroundColor: theme.secondary,
+      borderRadius: 4,
+    },
+    weeklyProgressLabel: { color: theme.textMuted, fontSize: 12, fontWeight: '600', marginBottom: 12 },
+    claimBtn: {
+      backgroundColor: theme.primary,
+      borderRadius: 12,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    claimBtnText: { color: '#fff', fontWeight: '900', fontSize: 15 },
+    claimedBadge: {
+      backgroundColor: theme.border,
+      borderRadius: 10,
+      paddingVertical: 10,
+      alignItems: 'center',
+    },
+    claimedText: { color: theme.textSecondary, fontWeight: '700', fontSize: 14 },
+
+    // Section label
+    sectionTitle: {
+      color: theme.textMuted,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      marginBottom: 12,
+      marginTop: 8,
+    },
+
+    // Activity grid
+    activityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+    activityBtn: {
+      backgroundColor: theme.cardBg,
+      borderRadius: 12,
+      padding: 14,
+      width: '30%',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
+    activityIcon: { fontSize: 24, marginBottom: 4 },
+    activityLabel: { color: theme.textSecondary, fontSize: 12, marginBottom: 2 },
+    activityPts: { color: theme.primary, fontWeight: '700', fontSize: 12 },
+
+    // Today's log
+    logRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+    },
+    logIcon: { fontSize: 18, marginRight: 10 },
+    logLabel: { color: theme.textSecondary, flex: 1, textTransform: 'capitalize' },
+    logPts: { color: theme.primary, fontWeight: '700' },
+  });
+}
