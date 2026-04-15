@@ -7,7 +7,7 @@ import {
 } from '../types';
 import {
   ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
-  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, DAILY_CHALLENGE_PTS,
 } from '../constants/game';
 
 // ─────────────────────────────────────────────
@@ -142,7 +142,6 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       lastActive === yesterday ? profile.streak + 1 : 1;
 
     const newPts = profile.pts + ptsEarned;
-    const newRank = getRankForPts(newPts).rank;
 
     await supabase
       .from('profiles')
@@ -150,7 +149,6 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
         pts: newPts,
         streak: newStreak,
         last_active_date: today,
-        rank: newRank,
       })
       .eq('id', user.id);
 
