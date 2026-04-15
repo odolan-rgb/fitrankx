@@ -10,6 +10,11 @@ import {
   getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS, BadgeDef,
 } from '../constants/game';
 import { checkAndAwardBadges } from './badges';
+import {
+  getOrCreateWeeklyChallenge,
+  updateWeeklyChallengeProgress,
+  claimWeeklyReward as claimWeeklyRewardFn,
+} from './weeklyChallenge';
 
 // ─────────────────────────────────────────────
 // State shape
@@ -43,6 +48,8 @@ interface FitRankXState {
   loadTodayActivities: () => Promise<void>;
   loadWeightLogs: () => Promise<void>;
   loadBadges: () => Promise<void>;
+  loadWeeklyChallenge: () => Promise<void>;
+  claimWeeklyReward: () => Promise<boolean>;
   reset: () => void;
 }
 
@@ -178,6 +185,10 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       }
     }
 
+    // Update weekly challenge progress
+    const updatedChallenge = await updateWeeklyChallengeProgress(user.id);
+    if (updatedChallenge) set({ weeklyChallenge: updatedChallenge });
+
     return { ptsEarned, comboBonus };
   },
 
@@ -214,6 +225,10 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     set({ todayChallenge: data });
     await get().loadProfile();
+
+    // Update weekly challenge progress (affects 'points' and 'challenges' types)
+    const updatedChallenge = await updateWeeklyChallengeProgress(user.id);
+    if (updatedChallenge) set({ weeklyChallenge: updatedChallenge });
   },
 
   logWeight: async (weightLbs: number) => {
@@ -274,6 +289,41 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     }
 
     await get().loadProfile();
+  },
+
+  loadWeeklyChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const challenge = await getOrCreateWeeklyChallenge(user.id);
+    set({ weeklyChallenge: challenge });
+  },
+
+  claimWeeklyReward: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+
+    const success = await claimWeeklyRewardFn(user.id);
+    if (!success) return false;
+
+    // Refresh profile (pts changed) and weekly challenge row
+    await get().loadProfile();
+    const updatedChallenge = await getOrCreateWeeklyChallenge(user.id);
+    set({ weeklyChallenge: updatedChallenge });
+
+    // Trigger weekly_hero badge check
+    const updatedProfile = get().profile;
+    if (updatedProfile) {
+      const newBadges = await checkAndAwardBadges(user.id, {
+        profile: updatedProfile,
+        todayActivities: get().todayActivities,
+      });
+      if (newBadges.length > 0) {
+        await get().loadBadges();
+        set({ pendingBadges: newBadges });
+      }
+    }
+
+    return true;
   },
 
   clearPendingBadges: () => set({ pendingBadges: [] }),
