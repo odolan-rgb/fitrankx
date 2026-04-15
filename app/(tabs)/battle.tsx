@@ -2,12 +2,9 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
 import { useTheme, ThemeColors } from '../../lib/theme';
+import TimerTab from '../../components/battle/TimerTab';
 
-// TODO: Implement full battle screen — see GitHub issues #battle-timer, #duels, #crews
-// Features needed:
-// - TIMER tab: select exercise + duration, countdown, rep input, score save
-// - DUELS tab: challenge a friend, view incoming duels, submit score
-// - CREW tab: create/join crew, crew leaderboard, challenge other crews
+// TODO: Implement DUELS and CREW tabs — see GitHub issues #6, #7
 
 type BattleTab = 'timer' | 'duels' | 'crew';
 
@@ -36,21 +33,11 @@ export default function BattleScreen() {
       </View>
 
       <View style={styles.content}>
-        {activeTab === 'timer' && <TimerPlaceholder theme={theme} />}
+        {activeTab === 'timer' && <TimerTab />}
         {activeTab === 'duels' && <DuelsPlaceholder theme={theme} />}
         {activeTab === 'crew' && <CrewPlaceholder theme={theme} />}
       </View>
     </SafeAreaView>
-  );
-}
-
-function TimerPlaceholder({ theme }: { theme: ThemeColors }) {
-  return (
-    <View style={placeholderStyles.placeholder}>
-      <Text style={placeholderStyles.placeholderIcon}>⏱️</Text>
-      <Text style={[placeholderStyles.placeholderTitle, { color: theme.text }]}>Timed Challenges</Text>
-      <Text style={placeholderStyles.placeholderSub}>Pick an exercise, set a timer, go hard.</Text>
-    </View>
   );
 }
 
