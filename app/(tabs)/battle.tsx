@@ -1,17 +1,16 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useState } from 'react';
-
-// TODO: Implement full battle screen — see GitHub issues #battle-timer, #duels, #crews
-// Features needed:
-// - TIMER tab: select exercise + duration, countdown, rep input, score save
-// - DUELS tab: challenge a friend, view incoming duels, submit score
-// - CREW tab: create/join crew, crew leaderboard, challenge other crews
+import { useTheme } from '../../lib/theme';
+import TimerTab from '../../components/battle/TimerTab';
+import DuelsTab from '../../components/battle/DuelsTab';
+import CrewTab from '../../components/battle/CrewTab';
 
 type BattleTab = 'timer' | 'duels' | 'crew';
 
 export default function BattleScreen() {
   const [activeTab, setActiveTab] = useState<BattleTab>('timer');
+  const theme = useTheme();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -21,7 +20,7 @@ export default function BattleScreen() {
           {(['timer', 'duels', 'crew'] as BattleTab[]).map(tab => (
             <TouchableOpacity
               key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
+              style={[styles.tab, activeTab === tab && { backgroundColor: theme.primary, borderColor: theme.primary }]}
               onPress={() => setActiveTab(tab)}
             >
               <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
@@ -33,41 +32,11 @@ export default function BattleScreen() {
       </View>
 
       <View style={styles.content}>
-        {activeTab === 'timer' && <TimerPlaceholder />}
-        {activeTab === 'duels' && <DuelsPlaceholder />}
-        {activeTab === 'crew' && <CrewPlaceholder />}
+        {activeTab === 'timer' && <TimerTab theme={theme} />}
+        {activeTab === 'duels' && <DuelsTab theme={theme} />}
+        {activeTab === 'crew' && <CrewTab theme={theme} />}
       </View>
     </SafeAreaView>
-  );
-}
-
-function TimerPlaceholder() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderIcon}>⏱️</Text>
-      <Text style={styles.placeholderTitle}>Timed Challenges</Text>
-      <Text style={styles.placeholderSub}>Pick an exercise, set a timer, go hard.</Text>
-    </View>
-  );
-}
-
-function DuelsPlaceholder() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderIcon}>⚔️</Text>
-      <Text style={styles.placeholderTitle}>Duels</Text>
-      <Text style={styles.placeholderSub}>Challenge friends to 1v1 rep battles.</Text>
-    </View>
-  );
-}
-
-function CrewPlaceholder() {
-  return (
-    <View style={styles.placeholder}>
-      <Text style={styles.placeholderIcon}>👥</Text>
-      <Text style={styles.placeholderTitle}>Crew Battles</Text>
-      <Text style={styles.placeholderSub}>Form a crew. Battle other squads.</Text>
-    </View>
   );
 }
 
@@ -85,12 +54,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2d1a4a',
   },
-  tabActive: { backgroundColor: '#a855f7', borderColor: '#a855f7' },
   tabText: { color: '#555', fontWeight: '700', fontSize: 12 },
   tabTextActive: { color: '#fff' },
   content: { flex: 1 },
-  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  placeholderIcon: { fontSize: 48, marginBottom: 16 },
-  placeholderTitle: { color: '#fff', fontSize: 22, fontWeight: '900', marginBottom: 8 },
-  placeholderSub: { color: '#666', fontSize: 15, textAlign: 'center' },
 });
