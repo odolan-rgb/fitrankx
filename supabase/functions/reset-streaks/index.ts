@@ -1,15 +1,17 @@
 /**
- * reset-streaks — Supabase Edge Function
+ * reset-streaks — Supabase Edge Function (daily cron)
  *
- * Calls reset_missed_streaks() once per day to zero out streaks for users
- * who did not log an activity yesterday.
+ * Resets streak to 0 for any user whose last_active_date is older than
+ * yesterday (i.e. they didn't log an activity today or yesterday).
  *
- * Schedule this via Supabase Dashboard → Edge Functions → Schedule
- * or pg_cron:
- *   select cron.schedule('reset-streaks', '0 2 * * *', $$ select net.http_post(...) $$);
+ * Runs: daily at midnight UTC via config.toml schedule `0 0 * * *`
  *
  * Invoke manually:
- *   supabase functions invoke reset-streaks --header "Authorization: Bearer $CRON_SECRET"
+ *   supabase functions invoke reset-streaks \
+ *     --header "Authorization: Bearer $CRON_SECRET"
+ *
+ * Deploy:
+ *   supabase functions deploy reset-streaks
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -19,7 +21,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const cronSecret = Deno.env.get('CRON_SECRET');
 
 Deno.serve(async (req: Request) => {
-  // Reject requests without the correct bearer token
+  // Guard: only allow requests with the cron secret (when configured)
   if (cronSecret) {
     const auth = req.headers.get('Authorization');
     if (auth !== `Bearer ${cronSecret}`) {
@@ -28,18 +30,38 @@ Deno.serve(async (req: Request) => {
   }
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { error } = await supabase.rpc('reset_missed_streaks');
+
+  // Compute yesterday as an ISO date string (YYYY-MM-DD) in UTC
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const yesterdayISO = yesterday.toISOString().split('T')[0];
+
+  const runAt = new Date().toISOString();
+  console.log(`[reset-streaks] Running at ${runAt}. Resetting streaks for users inactive before ${yesterdayISO}.`);
+
+  // Reset streaks and return affected rows so we can log the count.
+  // Service role key bypasses RLS; .select('id') turns the UPDATE into
+  // UPDATE … RETURNING id, giving us back which rows were affected.
+  const { data: reset, error } = await supabase
+    .from('profiles')
+    .update({ streak: 0 })
+    .lt('last_active_date', yesterdayISO)
+    .gt('streak', 0)
+    .select('id');
 
   if (error) {
-    console.error('reset_missed_streaks failed:', error.message);
+    console.error('[reset-streaks] Update failed:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  console.log('reset_missed_streaks completed successfully');
-  return new Response(JSON.stringify({ ok: true }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const resetCount = reset?.length ?? 0;
+  console.log(`[reset-streaks] Done. Reset ${resetCount} streak(s).`);
+
+  return new Response(
+    JSON.stringify({ ok: true, reset_count: resetCount, run_at: runAt }),
+    { headers: { 'Content-Type': 'application/json' } },
+  );
 });
