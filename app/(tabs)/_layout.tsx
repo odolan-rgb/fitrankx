@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, StyleSheet, TouchableOpacity } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../lib/theme';
 import { useFitRankX } from '../../lib/store';
+import { supabase } from '../../lib/supabase';
 import { BadgeDef } from '../../constants/game';
 
 // ─── Badge Toast ──────────────────────────────
@@ -55,6 +56,21 @@ export default function TabsLayout() {
   const pendingBadges = useFitRankX((s) => s.pendingBadges);
   const clearPendingBadges = useFitRankX((s) => s.clearPendingBadges);
   const currentBadge = pendingBadges[0] ?? null;
+  const [pendingRequests, setPendingRequests] = useState(0);
+
+  useEffect(() => {
+    const loadPending = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { count } = await supabase
+        .from('friend_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('to_user_id', user.id)
+        .eq('status', 'pending');
+      setPendingRequests(count ?? 0);
+    };
+    loadPending();
+  }, []);
 
   return (
     <View style={{ flex: 1 }}>
@@ -74,7 +90,7 @@ export default function TabsLayout() {
         }}
       >
         <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size} /> }} />
-        <Tabs.Screen name="leaderboard" options={{ title: 'Ranks', tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} /> }} />
+        <Tabs.Screen name="leaderboard" options={{ title: 'Ranks', tabBarBadge: pendingRequests > 0 ? pendingRequests : undefined, tabBarIcon: ({ color, size }) => <Ionicons name="trophy" color={color} size={size} /> }} />
         <Tabs.Screen name="battle" options={{ title: 'Battle', tabBarIcon: ({ color, size }) => <Ionicons name="flash" color={color} size={size} /> }} />
         <Tabs.Screen name="plan" options={{ title: 'Plan', tabBarIcon: ({ color, size }) => <Ionicons name="map" color={color} size={size} /> }} />
         <Tabs.Screen name="weight" options={{ title: 'Weight', tabBarIcon: ({ color, size }) => <Ionicons name="scale" color={color} size={size} /> }} />
