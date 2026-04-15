@@ -13,6 +13,8 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists rank_update_trigger on public.profiles;
+
 create trigger rank_update_trigger
   before update of pts on public.profiles
   for each row execute procedure update_rank_on_pts_change();
