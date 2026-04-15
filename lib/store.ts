@@ -7,8 +7,10 @@ import {
 } from '../types';
 import {
   ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
-  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS, BadgeDef,
 } from '../constants/game';
+import { checkAndAwardBadges } from './badges';
 
 // ─────────────────────────────────────────────
 // State shape
@@ -30,16 +32,25 @@ interface FitRankXState {
   // UI state
   isLoading: boolean;
   error: string | null;
+  pendingBadges: BadgeDef[];
 
   // Actions
   loadProfile: () => Promise<void>;
   logActivity: (type: ActivityType) => Promise<{ ptsEarned: number; comboBonus: boolean } | null>;
+  clearPendingBadges: () => void;
   completeDailyChallenge: (challengeText: string) => Promise<void>;
+  loadTodayChallenge: () => Promise<void>;
   logWeight: (weightLbs: number) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   loadTodayActivities: () => Promise<void>;
   loadWeightLogs: () => Promise<void>;
   loadBadges: () => Promise<void>;
+  // Plan actions
+  loadPlans: () => Promise<void>;
+  createPlan: (name: string, goal: string, targetDate: string | null, milestoneTexts: string[]) => Promise<Plan | null>;
+  toggleMilestone: (milestoneId: string, completed: boolean) => Promise<void>;
+  addJournalEntry: (planId: string, entry: string) => Promise<void>;
+  deletePlan: (planId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -60,6 +71,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
   weeklyChallenge: null,
   isLoading: false,
   error: null,
+  pendingBadges: [],
 
   loadProfile: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -114,6 +126,10 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     const ptsEarned = Math.round(basePts * multiplier) + (comboBonus ? COMBO_BONUS_PTS : 0);
 
+    // Derive local date for correct timezone-aware streak calculation
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     // Insert activity
     const { data: activity, error: actError } = await supabase
       .from('activities')
@@ -123,6 +139,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
         pts_earned: ptsEarned,
         multiplier,
         combo_bonus: comboBonus,
+        logged_date: today,
       })
       .select()
       .single();
@@ -132,26 +149,18 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       return null;
     }
 
-    // Update profile pts and streak
-    const today = new Date().toISOString().split('T')[0];
-    const lastActive = profile.last_active_date;
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // Update streak server-side — tamper-proof Postgres function
+    await supabase.rpc('update_streak', {
+      p_user_id: user.id,
+      p_activity_date: today,
+    });
 
-    const newStreak =
-      lastActive === today ? profile.streak :
-      lastActive === yesterday ? profile.streak + 1 : 1;
-
+    // Update pts and rank
     const newPts = profile.pts + ptsEarned;
-    const newRank = getRankForPts(newPts).rank;
 
     await supabase
       .from('profiles')
-      .update({
-        pts: newPts,
-        streak: newStreak,
-        last_active_date: today,
-        rank: newRank,
-      })
+      .update({ pts: newPts })
       .eq('id', user.id);
 
     // Refresh state
@@ -159,6 +168,20 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       get().loadProfile(),
       get().loadTodayActivities(),
     ]);
+
+    // Check and award any newly unlocked badges
+    const updatedProfile = get().profile;
+    const updatedActivities = get().todayActivities;
+    if (updatedProfile) {
+      const newBadges = await checkAndAwardBadges(user.id, {
+        profile: updatedProfile,
+        todayActivities: updatedActivities,
+      });
+      if (newBadges.length > 0) {
+        await get().loadBadges();
+        set({ pendingBadges: newBadges });
+      }
+    }
 
     return { ptsEarned, comboBonus };
   },
@@ -196,6 +219,21 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     set({ todayChallenge: data });
     await get().loadProfile();
+  },
+
+  loadTodayChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('daily_challenge_completions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('challenge_date', today)
+      .maybeSingle();
+
+    set({ todayChallenge: data ?? null });
   },
 
   logWeight: async (weightLbs: number) => {
@@ -258,6 +296,76 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     await get().loadProfile();
   },
 
+  clearPendingBadges: () => set({ pendingBadges: [] }),
+
+  // ─── Plan actions ──────────────────────────
+
+  loadPlans: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('plans')
+      .select('*, milestones:plan_milestones(*), log_entries:plan_log_entries(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) { set({ error: error.message }); return; }
+
+    const plans = (data ?? []).map(p => ({
+      ...p,
+      milestones: (p.milestones ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+      log_entries: (p.log_entries ?? []).sort((a: any, b: any) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    }));
+    set({ plans });
+  },
+
+  createPlan: async (name, goal, targetDate, milestoneTexts) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .insert({ user_id: user.id, name, goal, target_date: targetDate })
+      .select()
+      .single();
+
+    if (planError) { set({ error: planError.message }); return null; }
+
+    if (milestoneTexts.length > 0) {
+      await supabase.from('plan_milestones').insert(
+        milestoneTexts.map((text, i) => ({ plan_id: plan.id, text, sort_order: i }))
+      );
+    }
+
+    await get().loadPlans();
+    return plan;
+  },
+
+  toggleMilestone: async (milestoneId, completed) => {
+    const { error } = await supabase
+      .from('plan_milestones')
+      .update({ completed, completed_at: completed ? new Date().toISOString() : null })
+      .eq('id', milestoneId);
+
+    if (!error) await get().loadPlans();
+  },
+
+  addJournalEntry: async (planId, entry) => {
+    const { error } = await supabase
+      .from('plan_log_entries')
+      .insert({ plan_id: planId, entry });
+
+    if (!error) await get().loadPlans();
+  },
+
+  deletePlan: async (planId) => {
+    const { error } = await supabase.from('plans').delete().eq('id', planId);
+    if (!error) await get().loadPlans();
+  },
+
   reset: () => set({
     profile: null,
     todayActivities: [],
@@ -269,6 +377,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     crew: null,
     todayChallenge: null,
     weeklyChallenge: null,
+    pendingBadges: [],
     error: null,
   }),
 }));
