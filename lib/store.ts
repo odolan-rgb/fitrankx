@@ -7,8 +7,10 @@ import {
 } from '../types';
 import {
   ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
-  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, DAILY_CHALLENGE_PTS,
+  getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS, BadgeDef,
 } from '../constants/game';
+import { checkAndAwardBadges } from './badges';
 
 // ─────────────────────────────────────────────
 // State shape
@@ -30,11 +32,14 @@ interface FitRankXState {
   // UI state
   isLoading: boolean;
   error: string | null;
+  pendingBadges: BadgeDef[];
 
   // Actions
   loadProfile: () => Promise<void>;
   logActivity: (type: ActivityType) => Promise<{ ptsEarned: number; comboBonus: boolean } | null>;
+  clearPendingBadges: () => void;
   completeDailyChallenge: (challengeText: string) => Promise<void>;
+  loadTodayChallenge: () => Promise<void>;
   logWeight: (weightLbs: number) => Promise<void>;
   updateProfile: (updates: Partial<Profile>) => Promise<void>;
   loadTodayActivities: () => Promise<void>;
@@ -60,6 +65,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
   weeklyChallenge: null,
   isLoading: false,
   error: null,
+  pendingBadges: [],
 
   loadProfile: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -114,6 +120,10 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     const ptsEarned = Math.round(basePts * multiplier) + (comboBonus ? COMBO_BONUS_PTS : 0);
 
+    // Derive local date for correct timezone-aware streak calculation
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
     // Insert activity
     const { data: activity, error: actError } = await supabase
       .from('activities')
@@ -123,6 +133,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
         pts_earned: ptsEarned,
         multiplier,
         combo_bonus: comboBonus,
+        logged_date: today,
       })
       .select()
       .single();
@@ -132,26 +143,18 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       return null;
     }
 
-    // Update profile pts and streak
-    const today = new Date().toISOString().split('T')[0];
-    const lastActive = profile.last_active_date;
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    // Update streak server-side — tamper-proof Postgres function
+    await supabase.rpc('update_streak', {
+      p_user_id: user.id,
+      p_activity_date: today,
+    });
 
-    const newStreak =
-      lastActive === today ? profile.streak :
-      lastActive === yesterday ? profile.streak + 1 : 1;
-
+    // Update pts and rank
     const newPts = profile.pts + ptsEarned;
-    const newRank = getRankForPts(newPts).rank;
 
     await supabase
       .from('profiles')
-      .update({
-        pts: newPts,
-        streak: newStreak,
-        last_active_date: today,
-        rank: newRank,
-      })
+      .update({ pts: newPts })
       .eq('id', user.id);
 
     // Refresh state
@@ -159,6 +162,20 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
       get().loadProfile(),
       get().loadTodayActivities(),
     ]);
+
+    // Check and award any newly unlocked badges
+    const updatedProfile = get().profile;
+    const updatedActivities = get().todayActivities;
+    if (updatedProfile) {
+      const newBadges = await checkAndAwardBadges(user.id, {
+        profile: updatedProfile,
+        todayActivities: updatedActivities,
+      });
+      if (newBadges.length > 0) {
+        await get().loadBadges();
+        set({ pendingBadges: newBadges });
+      }
+    }
 
     return { ptsEarned, comboBonus };
   },
@@ -196,6 +213,21 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
 
     set({ todayChallenge: data });
     await get().loadProfile();
+  },
+
+  loadTodayChallenge: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('daily_challenge_completions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('challenge_date', today)
+      .maybeSingle();
+
+    set({ todayChallenge: data ?? null });
   },
 
   logWeight: async (weightLbs: number) => {
@@ -258,6 +290,8 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     await get().loadProfile();
   },
 
+  clearPendingBadges: () => set({ pendingBadges: [] }),
+
   reset: () => set({
     profile: null,
     todayActivities: [],
@@ -269,6 +303,7 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
     crew: null,
     todayChallenge: null,
     weeklyChallenge: null,
+    pendingBadges: [],
     error: null,
   }),
 }));
