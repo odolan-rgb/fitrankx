@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFitRankX } from '../../lib/store';
+import { useTheme } from '../../lib/theme';
 import { ACTIVITIES, getRankForPts, getRankProgress, getStreakMultiplier } from '../../constants/game';
 
 // TODO: Implement full home screen — see GitHub issue #home-screen
@@ -13,6 +14,7 @@ import { ACTIVITIES, getRankForPts, getRankProgress, getStreakMultiplier } from 
 
 export default function HomeScreen() {
   const { profile, todayActivities, logActivity } = useFitRankX();
+  const { theme } = useTheme();
   const rank = profile ? getRankForPts(profile.pts) : null;
   const rankProgress = profile ? getRankProgress(profile.pts) : 0;
   const multiplier = profile ? getStreakMultiplier(profile.streak) : 1;
@@ -52,8 +54,8 @@ export default function HomeScreen() {
 
         {/* Streak at risk warning */}
         {streakAtRisk && (
-          <View style={styles.streakWarning}>
-            <Text style={styles.streakWarningText}>
+          <View style={[styles.streakWarning, { borderColor: theme.secondary, backgroundColor: theme.card }]}>
+            <Text style={[styles.streakWarningText, { color: theme.secondary }]}>
               ⚠️ Streak at risk! Log an activity before midnight to keep your streak.
             </Text>
           </View>
@@ -125,14 +127,12 @@ const styles = StyleSheet.create({
   progressFill: { height: '100%', backgroundColor: '#a855f7', borderRadius: 4 },
   rankSub: { color: '#666', fontSize: 12, marginTop: 8 },
   streakWarning: {
-    backgroundColor: '#1a0a00',
     borderRadius: 10,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#ef4444',
   },
-  streakWarningText: { color: '#ef4444', fontWeight: '700', textAlign: 'center', fontSize: 13 },
+  streakWarningText: { fontWeight: '700', textAlign: 'center', fontSize: 13 },
   multiplierBadge: {
     backgroundColor: '#1a1000',
     borderRadius: 10,
