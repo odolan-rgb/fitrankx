@@ -39,6 +39,8 @@ export interface Profile {
   weight_lbs: number | null;
   fitness_goal: FitnessGoal | null;
   activity_level: ActivityLevel | null;
+  user_timezone: string;
+  push_token: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -167,6 +169,17 @@ export interface CrewBattle {
   created_at: string;
   challenger_crew?: Crew;
   challenged_crew?: Crew;
+}
+
+export type FriendRequestStatus = 'pending' | 'accepted' | 'declined';
+
+export interface FriendRequest {
+  id: string;
+  from_user_id: string;
+  to_user_id: string;
+  status: FriendRequestStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DailyChallengeCompletion {
