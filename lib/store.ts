@@ -7,9 +7,9 @@ import {
 } from '../types';
 import {
   ACTIVITY_MAP, COMBO_BONUS_PTS, COMBO_CARDIO_THRESHOLD,
-  getStreakMultiplier, DAILY_CHALLENGE_PTS,
   getStreakMultiplier, getRankForPts, DAILY_CHALLENGE_PTS, BadgeDef,
 } from '../constants/game';
+import { cancelStreakReminder, maybeScheduleWeeklyNudge } from './notifications';
 import { checkAndAwardBadges } from './badges';
 
 // ─────────────────────────────────────────────
@@ -175,6 +175,15 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
         await get().loadBadges();
         set({ pendingBadges: newBadges });
       }
+    }
+
+    // Cancel today's streak reminder — user has already been active
+    cancelStreakReminder().catch(() => {});
+
+    // Nudge user if weekly challenge is ≥ 80% complete
+    const weekly = get().weeklyChallenge;
+    if (weekly) {
+      maybeScheduleWeeklyNudge(weekly).catch(() => {});
     }
 
     return { ptsEarned, comboBonus };

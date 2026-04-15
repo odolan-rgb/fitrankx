@@ -40,6 +40,7 @@ export interface Profile {
   fitness_goal: FitnessGoal | null;
   activity_level: ActivityLevel | null;
   user_timezone: string;
+  push_token: string | null;
   created_at: string;
   updated_at: string;
 }
