@@ -45,6 +45,12 @@ interface FitRankXState {
   loadTodayActivities: () => Promise<void>;
   loadWeightLogs: () => Promise<void>;
   loadBadges: () => Promise<void>;
+  // Plan actions
+  loadPlans: () => Promise<void>;
+  createPlan: (name: string, goal: string, targetDate: string | null, milestoneTexts: string[]) => Promise<Plan | null>;
+  toggleMilestone: (milestoneId: string, completed: boolean) => Promise<void>;
+  addJournalEntry: (planId: string, entry: string) => Promise<void>;
+  deletePlan: (planId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -291,6 +297,74 @@ export const useFitRankX = create<FitRankXState>((set, get) => ({
   },
 
   clearPendingBadges: () => set({ pendingBadges: [] }),
+
+  // ─── Plan actions ──────────────────────────
+
+  loadPlans: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('plans')
+      .select('*, milestones:plan_milestones(*), log_entries:plan_log_entries(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) { set({ error: error.message }); return; }
+
+    const plans = (data ?? []).map(p => ({
+      ...p,
+      milestones: (p.milestones ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+      log_entries: (p.log_entries ?? []).sort((a: any, b: any) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
+    }));
+    set({ plans });
+  },
+
+  createPlan: async (name, goal, targetDate, milestoneTexts) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .insert({ user_id: user.id, name, goal, target_date: targetDate })
+      .select()
+      .single();
+
+    if (planError) { set({ error: planError.message }); return null; }
+
+    if (milestoneTexts.length > 0) {
+      await supabase.from('plan_milestones').insert(
+        milestoneTexts.map((text, i) => ({ plan_id: plan.id, text, sort_order: i }))
+      );
+    }
+
+    await get().loadPlans();
+    return plan;
+  },
+
+  toggleMilestone: async (milestoneId, completed) => {
+    const { error } = await supabase
+      .from('plan_milestones')
+      .update({ completed, completed_at: completed ? new Date().toISOString() : null })
+      .eq('id', milestoneId);
+
+    if (!error) await get().loadPlans();
+  },
+
+  addJournalEntry: async (planId, entry) => {
+    const { error } = await supabase
+      .from('plan_log_entries')
+      .insert({ plan_id: planId, entry });
+
+    if (!error) await get().loadPlans();
+  },
+
+  deletePlan: async (planId) => {
+    const { error } = await supabase.from('plans').delete().eq('id', planId);
+    if (!error) await get().loadPlans();
+  },
 
   reset: () => set({
     profile: null,
